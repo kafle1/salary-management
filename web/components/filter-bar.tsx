@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 import type { FilterOptions } from "@/lib/api";
 import { first, withParams, type RawSearchParams } from "@/lib/query";
 
@@ -14,7 +13,7 @@ type Props = {
 
 export function FilterBar({ basePath, params, options, children }: Props) {
   const router = useRouter();
-  const [search, setSearch] = useState(first(params, "search"));
+  const search = first(params, "search");
 
   // any change resets to page 1, otherwise you land on page 7 of a 2 page result
   const go = (changes: Record<string, string>) =>
@@ -25,7 +24,8 @@ export function FilterBar({ basePath, params, options, children }: Props) {
       className="filters"
       onSubmit={(event) => {
         event.preventDefault();
-        go({ search });
+        const typed = new FormData(event.currentTarget).get("search");
+        go({ search: typeof typed === "string" ? typed.trim() : "" });
       }}
     >
       <div className="field">
@@ -80,9 +80,11 @@ export function FilterBar({ basePath, params, options, children }: Props) {
         <label htmlFor="search">Name or email</label>
         <input
           id="search"
-          value={search}
+          name="search"
+          // uncontrolled and keyed on the url, so Reset actually empties the box
+          key={search}
+          defaultValue={search}
           placeholder="Search and press enter"
-          onChange={(event) => setSearch(event.target.value)}
         />
       </div>
 
