@@ -7,12 +7,14 @@ app.domain.statistics for odd, even and single-row groups.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from app.domain.filters import EmployeeFilter, GroupBy
 from app.domain.statistics import median
+from app.infrastructure.models import ExchangeRate
 from app.infrastructure.repositories import SqlSalaryAnalytics
 from tests.conftest import add_employee
 
@@ -155,3 +157,24 @@ def test_a_filter_narrows_the_groups_too(session: Session):
 
     assert len(groups) == 1
     assert groups[0].stats.headcount == 1
+
+
+def test_a_converted_salary_on_an_exact_half_cent_rounds_up(session: Session):
+    """The seeded rates never land on a half cent, so this forces the case they avoid.
+
+    It is the one thing SQLite could get wrong that Postgres would not: the multiply happens in
+    the engine, and if the result came back as a float the boundary could fall either way.
+    """
+    session.add(
+        ExchangeRate(
+            currency_code="XTS", usd_per_unit=Decimal("0.12345500"), as_of=date(2026, 8, 1)
+        )
+    )
+    session.flush()
+    add_employee(session, salary_amount="1000.00", currency_code="XTS")
+
+    stats = analytics(session).overall(EmployeeFilter.build())
+
+    # 1000.00 * 0.123455 is exactly 123.455, and money rounds half up
+    assert stats.median_salary == Decimal("123.46")
+    assert stats.total_payroll == Decimal("123.46")
