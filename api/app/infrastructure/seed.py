@@ -163,11 +163,11 @@ def seed_exchange_rates(session: Session) -> int:
     return len(rows)
 
 
-def seed_employees(
+def insert_employees(
     session: Session, count: int = DEFAULT_COUNT, seed: int = DEFAULT_SEED, batch_size: int = 1_000
 ) -> int:
-    """One executemany per batch. Building 10,000 ORM objects to throw them away is the slow way."""
-    session.execute(delete(Employee))
+    """Appends. One executemany per batch, because building 10,000 ORM objects to throw them away
+    is the slow way. Clearing is `seed_all`'s job, it has to happen before the rates go."""
     written = 0
     batch: list[dict[str, Any]] = []
     for row in generate_employees(count, seed):
@@ -186,4 +186,4 @@ def seed_all(session: Session, count: int = DEFAULT_COUNT, seed: int = DEFAULT_S
     # children before parents, every employee row points at a rate row
     session.execute(delete(Employee))
     seed_exchange_rates(session)
-    return seed_employees(session, count, seed)
+    return insert_employees(session, count, seed)
