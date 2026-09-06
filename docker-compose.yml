@@ -7,7 +7,7 @@ services:
       POSTGRES_DB: salary_management
     # 5433 on the host, so this does not fight a postgres you already run on 5432
     ports:
-      - "5433:5432"
+      - "${DB_PORT:-5433}:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
@@ -33,7 +33,7 @@ services:
       DATABASE_URL: postgresql+psycopg://salary:salary@db:5432/salary_management
       CORS_ORIGINS: http://localhost:3000
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     depends_on:
       seed:
         condition: service_completed_successfully
@@ -43,8 +43,9 @@ services:
     environment:
       # server side rendering talks to the api over the compose network, not through the browser
       API_BASE_URL: http://api:8000
+    # override with WEB_PORT=3010 if something already owns 3000
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
     depends_on:
       - api
 

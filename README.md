@@ -27,6 +27,9 @@ Compose brings up four things in order: the database, a one-shot `seed` containe
 schema and writes exactly 10,000 employees, then the API, then the web app. The seed container
 exits when it is done and the API waits for it, so the first page you load already has data on it.
 
+If one of those ports is already taken, `WEB_PORT`, `API_PORT` and `DB_PORT` override them:
+`WEB_PORT=3010 docker compose up --build`.
+
 Wiping and starting over is `make down && make up`.
 
 ### Without Docker
