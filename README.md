@@ -104,7 +104,8 @@ would be to load every row, and the pagination on top of it would be decorative.
 correct at ten million.
 
 - Paging is `LIMIT` / `OFFSET` in the database, with a separate filtered `COUNT(*)`. The count
-  skips the rate join, because no filter touches that table.
+  skips the rate join, because no filter touches that table, which leaves it as an index-only
+  scan with zero heap fetches.
 - **Every sort ends with `id`.** Without a total order, two employees with the same name and the
   same salary can come back in a different order on two requests, and a row silently appears twice
   or not at all across a page boundary. There is a test that fills a table with identical rows to
