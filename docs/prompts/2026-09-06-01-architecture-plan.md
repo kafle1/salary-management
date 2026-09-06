@@ -1,4 +1,4 @@
-# 2026-09-06 — architecture plan
+# 2026-09-06: architecture plan
 
 The plan the whole build ran from. I wrote the layering and the constraints by hand, then handed
 this to the assistant one slice at a time rather than as one big "build me a salary app", because
@@ -10,14 +10,14 @@ writing it.
 > Set up a FastAPI + SQLAlchemy 2.0 project laid out in four layers with dependencies pointing
 > inwards only:
 >
-> - `domain/` — pure Python. No FastAPI import, no SQLAlchemy import. Money and currency
+> - `domain/`: pure Python. No FastAPI import, no SQLAlchemy import. Money and currency
 >   conversion, median, the page-request value object, the sort-field whitelist, the employee
 >   filter value object.
-> - `application/` — use-case services. They depend on `ports.py`, which is `Protocol` classes,
+> - `application/`: use-case services. They depend on `ports.py`, which is `Protocol` classes,
 >   never on a `Session` and never on a repository class directly.
-> - `infrastructure/` — SQLAlchemy models, session factory, repositories implementing the ports.
+> - `infrastructure/`: SQLAlchemy models, session factory, repositories implementing the ports.
 >   The only layer that knows SQL exists.
-> - `api/` — routers, Pydantic schemas, dependency wiring. Thin: parse, call a service, return.
+> - `api/`: routers, Pydantic schemas, dependency wiring. Thin: parse, call a service, return.
 >
 > Constraints that do not bend:
 >

@@ -1,4 +1,4 @@
-# 2026-09-06 — clarifications, before any code
+# 2026-09-06: clarifications, before any code
 
 The brief is deliberately open. Four things in it could each be read two ways, and each reading
 implied a different week of work, so they went to the reviewer before I opened an editor. All four
@@ -6,7 +6,7 @@ came back the same day.
 
 ## What I asked, and what came back
 
-**1. "Answer questions about how the org pays people" — structured dashboards, or a
+**1. Does "answer questions about how the org pays people" mean structured dashboards, or a
 natural-language query box?**
 
 Answer: structured dashboards. KPI cards for total payroll spend, headcount, average and median

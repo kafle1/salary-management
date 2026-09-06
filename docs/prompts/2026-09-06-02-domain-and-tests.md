@@ -1,4 +1,4 @@
-# 2026-09-06 — the domain layer, test first
+# 2026-09-06: the domain layer, test first
 
 Money, median, paging and the sort whitelist. All four are small enough that the test is the
 specification, so the tests went in first and the assistant wrote against them.

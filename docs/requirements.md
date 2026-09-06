@@ -1,4 +1,4 @@
-# Salary Management — Requirements
+# Salary Management: requirements
 
 Written before the code. Updated once, on 6 Sep, after the reviewer answered the clarifying
 questions (see `docs/prompts/2026-09-06-00-clarifications.md`). Where this doc and those answers
@@ -117,8 +117,9 @@ whitelisting) is testable without booting anything.
 correct when the number is 10,000,000, since that is the part actually being assessed.
 
 - **Pagination happens in the database.** `LIMIT` / `OFFSET` with a separate filtered `COUNT(*)`.
-  The API accepts `page` and `page_size`, `page_size` is clamped to 200, and the response carries
-  `total`, `total_pages` and `has_next` so the UI never needs the full set to render controls.
+  The API accepts `page` and `page_size`, a `page_size` above 200 is rejected rather than quietly
+  reduced, and the response carries `total`, `total_pages` and `has_next` so the UI never needs
+  the full set to render controls.
 - **Ordering is total, not partial.** Every sort appends `id` as a final tie-breaker. Without it,
   Postgres is free to return rows in a different order for two pages of the same query and
   records silently appear twice or not at all across page boundaries.

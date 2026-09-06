@@ -1,4 +1,4 @@
-# 2026-09-06 — pagination and the SQL that keeps aggregates server-side
+# 2026-09-06: pagination, and the SQL that keeps aggregates server-side
 
 The graded part. Everything here had a test written before it.
 
