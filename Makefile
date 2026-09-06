@@ -1,6 +1,6 @@
 DB_URL ?= postgresql+psycopg://salary:salary@localhost:5433/salary_management
 
-.PHONY: up down logs test seed api web install
+.PHONY: up down logs test lint seed api web install
 
 ## everything, one command
 up:
@@ -15,6 +15,9 @@ logs:
 ## the tests. sqlite in memory, no containers needed
 test:
 	cd api && uv run pytest
+
+lint:
+	cd api && uv run ruff check app tests
 
 install:
 	cd api && uv sync

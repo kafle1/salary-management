@@ -44,7 +44,8 @@ API and `API_BASE_URL` for the web app.
 ## Test it
 
 ```bash
-make test
+make test     # 108 tests
+make lint     # ruff over the api
 ```
 
 108 tests, about two seconds, no network, no sleeps, no unseeded randomness. They run against

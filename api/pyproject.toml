@@ -16,6 +16,7 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "httpx>=0.28",
+    "ruff>=0.8",
 ]
 
 [project.scripts]
@@ -35,3 +36,14 @@ filterwarnings = [
     # sqlite has no native decimal, sqlalchemy warns once per numeric column. tests round anyway.
     "ignore::sqlalchemy.exc.SAWarning",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["F", "E", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# Query() in a default is how fastapi declares parameters, the rule predates it
+"app/api/routes.py" = ["B008"]

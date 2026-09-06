@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar
 
 DEFAULT_PAGE_SIZE = 25
 MAX_PAGE_SIZE = 200
-
-T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -20,7 +17,9 @@ class PageRequest:
         if self.page < 1:
             raise ValueError(f"page starts at 1, got {self.page}")
         if not 1 <= self.page_size <= MAX_PAGE_SIZE:
-            raise ValueError(f"page_size must be between 1 and {MAX_PAGE_SIZE}, got {self.page_size}")
+            raise ValueError(
+                f"page_size must be between 1 and {MAX_PAGE_SIZE}, got {self.page_size}"
+            )
 
     @property
     def offset(self) -> int:
@@ -32,7 +31,7 @@ class PageRequest:
 
 
 @dataclass(frozen=True)
-class Page(Generic[T]):
+class Page[T]:
     items: list[T] = field(default_factory=list)
     total: int = 0
     request: PageRequest = field(default_factory=PageRequest)

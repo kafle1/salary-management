@@ -72,7 +72,9 @@ class SortSpec:
                 SortDirection(direction.strip().lower()) if direction else SortDirection.ASC
             )
         except ValueError as exc:
-            raise UnknownSortField(f"sort direction must be asc or desc, got {direction!r}") from exc
+            raise UnknownSortField(
+                f"sort direction must be asc or desc, got {direction!r}"
+            ) from exc
         return cls(resolved_field, resolved_dir)
 
 
