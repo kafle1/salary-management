@@ -47,11 +47,11 @@ API and `API_BASE_URL` for the web app.
 ## Test it
 
 ```bash
-make test     # 108 tests
+make test     # 109 tests
 make lint     # ruff over the api
 ```
 
-108 tests, about four seconds, no network, no sleeps, no unseeded randomness. They run against
+109 tests, about four seconds, no network, no sleeps, no unseeded randomness. They run against
 SQLite in memory, which is why they are that fast and why there is no Postgres-only SQL anywhere
 in a query path. Splitting them roughly:
 
@@ -132,6 +132,18 @@ correct at ten million.
   that also has to build on SQLite.
 - Sort fields come from an enum mapped to SQL expressions. A user string never reaches `ORDER BY`.
 
+Two things here would be the real bottleneck long before the pagination is:
+
+- **The median sorts the whole filtered set.** An exact median has to, there is no `LIMIT` that
+  makes it cheaper, and the dashboard runs it twice per request (once overall, once per group).
+  At 10,000 rows it is 80 ms. At ten million it is the slowest thing in the system and the answer
+  is either an approximate median (`percentile_disc` on a sample, or a t-digest) or a nightly
+  rollup table, both of which trade exactness for speed. That is a product decision, not a
+  refactor, so it is written down here rather than guessed at.
+- **`/employees/filter-options` runs three `SELECT DISTINCT` queries on every page render.** On
+  indexed columns over a table that changes never. It is free at this size and it is the obvious
+  first thing to cache, keyed on nothing, invalidated on write.
+
 ### Money
 
 Salaries are `NUMERIC(14, 2)` and `Decimal` all the way through, never float. They cross the wire
@@ -141,6 +153,13 @@ round trip through a JSON number, and the browser only needs it for display.
 The seeded rates are all chosen so a converted salary lands exactly on a cent. That is not
 cosmetic: it means the sum of the rounded rows and the rounded sum of the rows are the same
 number, so the KPI card, the country breakdown and a hand check all agree.
+
+One residual risk worth naming, since the tests run on SQLite and the app runs on Postgres:
+SQLite has no native decimal type, so the multiply inside the engine happens in float and
+SQLAlchemy converts the result back to `Decimal` at the column's declared scale. Postgres does
+the whole thing in `NUMERIC`. At payroll magnitudes float64 has far more precision than a cent
+needs, so the two agree, and there is a test that forces the nastiest case (a rate that puts a
+converted salary exactly on a half cent) to pin the rounding rather than assume it.
 
 ### The front end
 
