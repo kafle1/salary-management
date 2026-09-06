@@ -27,14 +27,32 @@ class SortDirection(StrEnum):
     DESC = "desc"
 
 
+class InvalidQueryParameter(ValueError):
+    """Anything the caller asked for that this system does not offer. The API maps it to a 400."""
+
+
+class UnknownSortField(InvalidQueryParameter):
+    pass
+
+
+class UnknownGroupBy(InvalidQueryParameter):
+    pass
+
+
 class GroupBy(StrEnum):
     COUNTRY = "country"
     DEPARTMENT = "department"
     ROLE = "role"
 
-
-class UnknownSortField(ValueError):
-    pass
+    @classmethod
+    def parse(cls, value: str | None = None) -> GroupBy:
+        if not value:
+            return cls.COUNTRY
+        try:
+            return cls(value.strip().lower())
+        except ValueError as exc:
+            allowed = ", ".join(dimension.value for dimension in cls)
+            raise UnknownGroupBy(f"cannot group by {value!r}. allowed: {allowed}") from exc
 
 
 @dataclass(frozen=True)
