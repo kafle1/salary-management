@@ -1,0 +1,52 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: salary
+      POSTGRES_PASSWORD: salary
+      POSTGRES_DB: salary_management
+    # 5433 on the host, so this does not fight a postgres you already run on 5432
+    ports:
+      - "5433:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U salary -d salary_management"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # runs once, creates the schema and writes the 10,000 rows, then exits
+  seed:
+    build: ./api
+    environment:
+      DATABASE_URL: postgresql+psycopg://salary:salary@db:5432/salary_management
+    command: ["salary-admin", "reset"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: ./api
+    environment:
+      DATABASE_URL: postgresql+psycopg://salary:salary@db:5432/salary_management
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+  web:
+    build: ./web
+    environment:
+      # server side rendering talks to the api over the compose network, not through the browser
+      API_BASE_URL: http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  db-data:
