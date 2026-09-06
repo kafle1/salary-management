@@ -48,7 +48,7 @@ make test     # 108 tests
 make lint     # ruff over the api
 ```
 
-108 tests, about two seconds, no network, no sleeps, no unseeded randomness. They run against
+108 tests, about four seconds, no network, no sleeps, no unseeded randomness. They run against
 SQLite in memory, which is why they are that fast and why there is no Postgres-only SQL anywhere
 in a query path. Splitting them roughly:
 

@@ -164,6 +164,6 @@ correct when the number is 10,000,000, since that is the part actually being ass
 
 - `docker compose up` gives a working database, API and web app.
 - `make seed` puts exactly 10,000 employees in it, identically every time.
-- The test suite runs in seconds, with no network, no sleeps and no unseeded randomness.
+- The test suite runs in a few seconds, with no network, no sleeps and no unseeded randomness.
 - Commit history shows the order this was actually built in.
 - A short video walking through the dashboard and the employee table.
