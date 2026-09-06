@@ -352,7 +352,7 @@ th a:hover {
   border-radius: 4px;
 }
 
-.sizes a[aria-current="true"] {
+.sizes a[aria-current="page"] {
   background: var(--accent-soft);
   color: var(--accent);
 }

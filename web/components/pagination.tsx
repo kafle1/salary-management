@@ -39,7 +39,7 @@ export function Pagination({
           <Link
             key={size}
             href={href({ page_size: String(size), page: "" })}
-            aria-current={size === pageSize ? "true" : undefined}
+            aria-current={size === pageSize ? "page" : undefined}
           >
             {size}
           </Link>

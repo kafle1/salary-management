@@ -1,7 +1,13 @@
 import { FilterBar } from "@/components/filter-bar";
 import { Pagination } from "@/components/pagination";
 import { SortHeader } from "@/components/sort-header";
-import { fetchEmployees, fetchFilterOptions, type EmployeePage, type FilterOptions } from "@/lib/api";
+import {
+  describeError,
+  fetchEmployees,
+  fetchFilterOptions,
+  type EmployeePage,
+  type FilterOptions,
+} from "@/lib/api";
 import { count, hireDate, money } from "@/lib/format";
 import { first, positiveInt, toApiParams, type RawSearchParams } from "@/lib/query";
 
@@ -31,7 +37,10 @@ export default async function EmployeesPage({
     return (
       <>
         <h1>Employees</h1>
-        <p className="error">The API did not answer. ({(error as Error).message})</p>
+        <p className="error">
+          Could not load this view. If nothing is running, start the stack with{" "}
+          <code>docker compose up</code>. ({describeError(error)})
+        </p>
       </>
     );
   }

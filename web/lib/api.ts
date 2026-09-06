@@ -85,3 +85,9 @@ export function fetchFilterOptions(): Promise<FilterOptions> {
 export function fetchSummary(params: URLSearchParams): Promise<DashboardSummary> {
   return getJson<DashboardSummary>("/dashboard/summary", params);
 }
+
+/** A 422 from a hand-edited url and a dead API are different problems, so say which. */
+export function describeError(error: unknown): string {
+  if (error instanceof ApiError) return `${error.status} ${error.message.slice(0, 200)}`;
+  return error instanceof Error ? error.message : String(error);
+}

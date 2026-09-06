@@ -24,18 +24,18 @@ def list_employees(
     service: EmployeeServiceDep,
     page: int = Query(1, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
-    country: list[str] = Query(default=[]),
-    department: list[str] = Query(default=[]),
-    role: list[str] = Query(default=[]),
+    country: list[str] | None = Query(default=None),
+    department: list[str] | None = Query(default=None),
+    role: list[str] | None = Query(default=None),
     search: str | None = Query(default=None),
     sort_by: str | None = Query(default=None),
     sort_dir: str | None = Query(default=None),
 ) -> EmployeePageOut:
     result = service.list(
         EmployeeQuery(
-            countries=country,
-            departments=department,
-            roles=role,
+            countries=country or [],
+            departments=department or [],
+            roles=role or [],
             search=search,
             sort_by=sort_by,
             sort_direction=sort_dir,
@@ -55,16 +55,16 @@ def filter_options(service: EmployeeServiceDep) -> FilterOptionsOut:
 def dashboard_summary(
     service: DashboardServiceDep,
     group_by: str | None = Query(default=None),
-    country: list[str] = Query(default=[]),
-    department: list[str] = Query(default=[]),
-    role: list[str] = Query(default=[]),
+    country: list[str] | None = Query(default=None),
+    department: list[str] | None = Query(default=None),
+    role: list[str] | None = Query(default=None),
     search: str | None = Query(default=None),
 ) -> DashboardSummaryOut:
     summary = service.summary(
         DashboardQuery(
-            countries=country,
-            departments=department,
-            roles=role,
+            countries=country or [],
+            departments=department or [],
+            roles=role or [],
             search=search,
             group_by=group_by,
         )

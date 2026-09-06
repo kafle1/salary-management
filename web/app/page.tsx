@@ -1,6 +1,12 @@
 import { FilterBar } from "@/components/filter-bar";
 import { GroupBySelect } from "@/components/group-by-select";
-import { fetchFilterOptions, fetchSummary, type DashboardSummary, type FilterOptions } from "@/lib/api";
+import {
+  describeError,
+  fetchFilterOptions,
+  fetchSummary,
+  type DashboardSummary,
+  type FilterOptions,
+} from "@/lib/api";
 import { compactMoney, count, money, percent } from "@/lib/format";
 import { first, toApiParams, type RawSearchParams } from "@/lib/query";
 
@@ -27,8 +33,8 @@ export default async function DashboardPage({
       <>
         <h1>Payroll overview</h1>
         <p className="error">
-          The API did not answer. Start it with <code>docker compose up</code> or check that
-          <code> API_BASE_URL</code> points at it. ({(error as Error).message})
+          Could not load this view. If nothing is running, start the stack with{" "}
+          <code>docker compose up</code>. ({describeError(error)})
         </p>
       </>
     );
