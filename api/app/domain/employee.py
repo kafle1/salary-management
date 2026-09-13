@@ -7,7 +7,7 @@ fire halfway through serialising a response and the API layer has nothing to say
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 
 from app.domain.money import Money
 
@@ -40,7 +40,7 @@ class Employee:
 class SalaryChange:
     """One move in someone's pay. `previous` is None for the salary they were added on."""
 
-    changed_at: datetime
+    changed_on: date
     previous: Money | None
     new: Money
     note: str | None

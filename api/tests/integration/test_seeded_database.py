@@ -43,6 +43,18 @@ def test_the_seed_writes_every_row_it_generated(session: Session):
     assert session.execute(select(func.count()).select_from(EmployeeRow)).scalar_one() == SAMPLE
 
 
+def test_every_seeded_person_starts_with_their_salary_on_record(session: Session):
+    seeded(session)
+    repository = SqlEmployeeRepository(session)
+    first_id = session.execute(select(func.min(EmployeeRow.id))).scalar_one()
+
+    [start] = repository.history(first_id)
+
+    assert start.previous is None
+    assert start.new == repository.get(first_id).salary
+    assert start.changed_on == repository.get(first_id).hire_date
+
+
 def test_seeding_twice_leaves_one_copy_not_two(session: Session):
     seed_all(session, count=SAMPLE)
     seed_all(session, count=SAMPLE)
