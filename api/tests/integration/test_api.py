@@ -137,8 +137,12 @@ def test_dashboard_summary_shape(client: TestClient, staffed: Session):
         "total_payroll",
         "average_salary",
         "median_salary",
+        "lowest_salary",
+        "highest_salary",
     }
     assert {group["key"] for group in body["groups"]} == {"Engineering", "Finance"}
+    assert set(body["bands"][0]) == {"lower", "upper", "headcount"}
+    assert sum(band["headcount"] for band in body["bands"]) == 5
 
 
 def test_dashboard_respects_the_same_filters_as_the_table(client: TestClient, staffed: Session):
@@ -159,12 +163,35 @@ def test_an_empty_selection_returns_zeroes_rather_than_nulls_for_the_count(
     assert body["overall"]["total_payroll"] == "0.00"
     assert body["overall"]["average_salary"] is None
     assert body["groups"] == []
+    assert body["bands"] == []
 
 
 def test_an_unknown_grouping_is_a_400(client: TestClient):
     response = client.get("/dashboard/summary", params={"group_by": "astrology"})
 
     assert response.status_code == 400
+
+
+def test_people_paid_well_under_their_peers(client: TestClient, session: Session):
+    for index, amount in enumerate(["100000.00"] * 4 + ["70000.00"]):
+        add_employee(session, full_name=f"Engineer {index}", salary_amount=amount)
+    session.commit()
+
+    body = client.get("/dashboard/below-peers", params={"country": "US"}).json()
+
+    assert body["threshold_percent"] == 80
+    assert body["min_peers"] == 5
+    assert body["total"] == 1
+    [gap] = body["items"]
+    assert gap["employee"]["full_name"] == "Engineer 4"
+    assert gap["peer_median"] == {"amount": "100000.00", "currency": "USD"}
+    assert gap["peers"] == 5
+    assert gap["percent_of_median"] == 70
+
+
+def test_the_peer_gap_list_refuses_a_silly_limit(client: TestClient):
+    assert client.get("/dashboard/below-peers", params={"limit": 0}).status_code == 422
+    assert client.get("/dashboard/below-peers", params={"limit": 1000}).status_code == 422
 
 
 def new_hire(**overrides) -> dict:

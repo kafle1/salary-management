@@ -23,6 +23,7 @@ from app.domain.filters import (
     UnknownGroupBy,
     UnknownSortField,
 )
+from app.domain.insights import BandLayout, PeerGapReport
 from app.domain.money import Money
 from app.domain.pagination import Page, PageRequest
 from app.domain.summary import GroupStats, SalaryStats
@@ -41,22 +42,35 @@ class FakeEmployeeReader:
 
 
 class FakeAnalytics:
-    def __init__(self) -> None:
+    def __init__(self, stats: SalaryStats | None = None) -> None:
         self.overall_calls: list[EmployeeFilter] = []
         self.group_calls: list[tuple[EmployeeFilter, GroupBy]] = []
-
-    def overall(self, filters):
-        self.overall_calls.append(filters)
-        return SalaryStats(
+        self.distribution_calls: list[tuple[EmployeeFilter, BandLayout]] = []
+        self.peer_calls: list[tuple[EmployeeFilter, int]] = []
+        self.stats = stats or SalaryStats(
             headcount=3,
             total_payroll=Decimal("300000.00"),
             average_salary=Decimal("100000.00"),
             median_salary=Decimal("90000.00"),
+            lowest_salary=Decimal("40000.00"),
+            highest_salary=Decimal("372000.00"),
         )
+
+    def overall(self, filters):
+        self.overall_calls.append(filters)
+        return self.stats
 
     def by_group(self, filters, group_by):
         self.group_calls.append((filters, group_by))
         return [GroupStats(key="US", label="United States", stats=SalaryStats(headcount=3))]
+
+    def distribution(self, filters, layout):
+        self.distribution_calls.append((filters, layout))
+        return layout.bands({0: 3})
+
+    def below_peers(self, filters, limit):
+        self.peer_calls.append((filters, limit))
+        return PeerGapReport(total=0, items=[])
 
 
 def test_raw_request_values_are_normalised_before_they_reach_the_repository():
@@ -142,6 +156,36 @@ def test_grouping_defaults_to_country():
 def test_an_unknown_grouping_is_refused():
     with pytest.raises(UnknownGroupBy):
         DashboardService(FakeAnalytics()).summary(DashboardQuery(group_by="astrology"))
+
+
+def test_the_pay_bands_are_sized_to_the_top_earner_of_the_same_selection():
+    analytics = FakeAnalytics()
+
+    summary = DashboardService(analytics).summary(DashboardQuery(roles=["VP"]))
+
+    filters, layout = analytics.distribution_calls[0]
+    assert filters == analytics.overall_calls[0]
+    assert layout == BandLayout.covering(Decimal("372000.00"))
+    assert [band.headcount for band in summary.bands][:2] == [3, 0]
+
+
+def test_an_empty_selection_skips_the_band_query():
+    analytics = FakeAnalytics(stats=SalaryStats())
+
+    summary = DashboardService(analytics).summary(DashboardQuery(search="nobody"))
+
+    assert summary.bands == []
+    assert analytics.distribution_calls == []
+
+
+def test_the_peer_gap_list_gets_the_same_filter_as_the_dashboard():
+    analytics = FakeAnalytics()
+    service = DashboardService(analytics)
+
+    service.summary(DashboardQuery(countries=["us"], departments=["Sales"]))
+    service.below_peers(DashboardQuery(countries=["us"], departments=["Sales"]), limit=10)
+
+    assert analytics.peer_calls == [(analytics.overall_calls[0], 10)]
 
 
 def employee(employee_id: int = 1, email: str = "ada@acme.example", amount: str = "85000.00"):

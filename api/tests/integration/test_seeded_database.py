@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.filters import EmployeeFilter, GroupBy, SortDirection, SortField, SortSpec
+from app.domain.insights import BandLayout
 from app.domain.money import to_cents
 from app.domain.pagination import PageRequest
 from app.domain.statistics import median
@@ -132,3 +133,26 @@ def test_the_top_of_the_converted_ranking_is_not_the_top_of_the_native_one(sessi
 
     # the biggest raw numbers are all in the weakest currencies, so these lists disagree
     assert [e.id for e in by_usd.items] != [e.id for e in by_native.items]
+
+
+def test_the_pay_bands_account_for_every_seeded_person(session: Session):
+    seeded(session)
+    analytics = SqlSalaryAnalytics(session)
+    overall = analytics.overall(EmployeeFilter.build())
+
+    bands = analytics.distribution(
+        EmployeeFilter.build(), BandLayout.covering(overall.highest_salary)
+    )
+
+    assert sum(band.headcount for band in bands) == SAMPLE
+    assert bands[-1].headcount > 0
+
+
+def test_the_seeded_org_has_a_few_people_paid_well_under_their_peers(session: Session):
+    seeded(session)
+
+    report = SqlSalaryAnalytics(session).below_peers(EmployeeFilter.build(), limit=25)
+
+    # hired cheap and never caught up: rare, but the list has something real to show
+    assert 0 < report.total < SAMPLE * 0.1
+    assert all(gap.percent_of_median < 80 for gap in report.items)
