@@ -106,6 +106,9 @@ LAST_NAMES = (
     "Silva", "Singh", "Tamang", "Tanaka", "Turing", "Verma", "Walsh", "Weber", "Yamada",
 )
 
+# some people were hired cheap and never caught up. they are what the peer gap list is for
+HIRED_CHEAP_SHARE = 0.03
+
 HIRING_STARTED = date(2016, 1, 4)
 HIRING_ENDED = date(2026, 8, 31)
 _HIRING_WINDOW_DAYS = (HIRING_ENDED - HIRING_STARTED).days
@@ -137,7 +140,9 @@ def generate_employees(
         country = BY_CODE[country_code]
         role = rng.choices(role_names, weights=role_weights, k=1)[0]
 
-        target_usd = midpoints[role] * COUNTRY_COST[country_code] * rng.uniform(0.85, 1.20)
+        cheap = rng.random() < HIRED_CHEAP_SHARE
+        spread = rng.uniform(0.55, 0.75) if cheap else rng.uniform(0.85, 1.20)
+        target_usd = midpoints[role] * COUNTRY_COST[country_code] * spread
         native = _round_to_hundred(target_usd / float(USD_PER_UNIT[country.currency]))
 
         yield {

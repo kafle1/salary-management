@@ -91,9 +91,9 @@ def test_country_groups_add_back_up_to_the_org_total(session: Session):
     groups = analytics.by_group(EmployeeFilter.build(), GroupBy.COUNTRY)
 
     assert sum(group.stats.headcount for group in groups) == overall.headcount
-    assert sum(
-        (group.stats.total_payroll for group in groups), Decimal("0")
-    ) == overall.total_payroll
+    assert (
+        sum((group.stats.total_payroll for group in groups), Decimal("0")) == overall.total_payroll
+    )
 
 
 def test_paging_the_whole_seeded_set_visits_every_row_exactly_once(session: Session):

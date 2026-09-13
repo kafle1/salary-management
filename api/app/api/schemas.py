@@ -15,7 +15,8 @@ from pydantic import BaseModel, PlainSerializer
 
 from app.domain.countries import COUNTRIES
 from app.domain.employee import Employee, EmployeeDetail, FilterOptions, SalaryChange
-from app.domain.money import Money
+from app.domain.insights import PayBand, PeerGapReport
+from app.domain.money import BASE_CURRENCY, Money
 from app.domain.pagination import Page
 from app.domain.summary import DashboardSummary, SalaryStats
 
@@ -162,6 +163,8 @@ class SalaryStatsOut(BaseModel):
     total_payroll: MoneyAmount
     average_salary: OptionalMoneyAmount = None
     median_salary: OptionalMoneyAmount = None
+    lowest_salary: OptionalMoneyAmount = None
+    highest_salary: OptionalMoneyAmount = None
 
     @classmethod
     def of(cls, stats: SalaryStats) -> SalaryStatsOut:
@@ -170,6 +173,8 @@ class SalaryStatsOut(BaseModel):
             total_payroll=stats.total_payroll,
             average_salary=stats.average_salary,
             median_salary=stats.median_salary,
+            lowest_salary=stats.lowest_salary,
+            highest_salary=stats.highest_salary,
         )
 
 
@@ -178,11 +183,22 @@ class GroupStatsOut(SalaryStatsOut):
     label: str
 
 
+class PayBandOut(BaseModel):
+    lower: MoneyAmount
+    upper: MoneyAmount
+    headcount: int
+
+    @classmethod
+    def of(cls, band: PayBand) -> PayBandOut:
+        return cls(lower=band.lower, upper=band.upper, headcount=band.headcount)
+
+
 class DashboardSummaryOut(BaseModel):
     base_currency: str
     group_by: str
     overall: SalaryStatsOut
     groups: list[GroupStatsOut]
+    bands: list[PayBandOut]
 
     @classmethod
     def of(cls, summary: DashboardSummary) -> DashboardSummaryOut:
@@ -194,11 +210,40 @@ class DashboardSummaryOut(BaseModel):
                 GroupStatsOut(
                     key=group.key,
                     label=group.label,
-                    headcount=group.stats.headcount,
-                    total_payroll=group.stats.total_payroll,
-                    average_salary=group.stats.average_salary,
-                    median_salary=group.stats.median_salary,
+                    **SalaryStatsOut.of(group.stats).model_dump(),
                 )
                 for group in summary.groups
+            ],
+            bands=[PayBandOut.of(band) for band in summary.bands],
+        )
+
+
+class PeerGapOut(BaseModel):
+    employee: EmployeeOut
+    peer_median: MoneyOut
+    peers: int
+    percent_of_median: int
+
+
+class PeerGapReportOut(BaseModel):
+    threshold_percent: int
+    min_peers: int
+    total: int
+    items: list[PeerGapOut]
+
+    @classmethod
+    def of(cls, report: PeerGapReport) -> PeerGapReportOut:
+        return cls(
+            threshold_percent=report.threshold_percent,
+            min_peers=report.min_peers,
+            total=report.total,
+            items=[
+                PeerGapOut(
+                    employee=EmployeeOut.of(gap.employee),
+                    peer_median=MoneyOut.of(Money(gap.peer_median, BASE_CURRENCY)),
+                    peers=gap.peers,
+                    percent_of_median=gap.percent_of_median,
+                )
+                for gap in report.items
             ],
         )

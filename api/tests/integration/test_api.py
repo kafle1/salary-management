@@ -76,9 +76,7 @@ def test_the_second_page_is_a_different_slice(client: TestClient, staffed: Sessi
 
 
 def test_money_crosses_the_wire_as_a_fixed_string_not_a_float(client: TestClient, staffed: Session):
-    body = client.get(
-        "/employees", params={"search": "ada", "page_size": 1}
-    ).json()
+    body = client.get("/employees", params={"search": "ada", "page_size": 1}).json()
 
     salary = body["items"][0]["salary"]
     assert salary == {"amount": "120000.00", "currency": "USD"}

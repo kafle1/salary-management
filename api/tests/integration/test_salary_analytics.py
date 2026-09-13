@@ -97,8 +97,9 @@ def test_an_empty_selection_reports_zero_rather_than_crashing(session: Session):
 def test_grouping_by_country_reports_a_row_per_country(session: Session):
     add_employee(session, full_name="A", country_code="US", salary_amount="100000.00")
     add_employee(session, full_name="B", country_code="US", salary_amount="200000.00")
-    add_employee(session, full_name="C", country_code="IN", salary_amount="100000.00",
-                 currency_code="INR")
+    add_employee(
+        session, full_name="C", country_code="IN", salary_amount="100000.00", currency_code="INR"
+    )
 
     groups = analytics(session).by_group(EmployeeFilter.build(), GroupBy.COUNTRY)
 
@@ -149,12 +150,9 @@ def test_groups_come_back_ordered_by_spend_so_the_chart_reads_top_down(session: 
 
 def test_a_filter_narrows_the_groups_too(session: Session):
     add_employee(session, full_name="A", country_code="US", department="Sales")
-    add_employee(session, full_name="B", country_code="IN", department="Sales",
-                 currency_code="INR")
+    add_employee(session, full_name="B", country_code="IN", department="Sales", currency_code="INR")
 
-    groups = analytics(session).by_group(
-        EmployeeFilter.build(countries=["us"]), GroupBy.DEPARTMENT
-    )
+    groups = analytics(session).by_group(EmployeeFilter.build(countries=["us"]), GroupBy.DEPARTMENT)
 
     assert len(groups) == 1
     assert groups[0].stats.headcount == 1
@@ -227,8 +225,9 @@ def test_everyone_lands_in_exactly_one_band_and_a_salary_on_an_edge_goes_up(sess
 
 def test_bands_are_counted_after_conversion_and_respect_the_filter(session: Session):
     # 10000 EUR is 20000 USD, so it belongs in the third band, not the second
-    add_employee(session, full_name="A", country_code="DE", salary_amount="10000.00",
-                 currency_code="EUR")
+    add_employee(
+        session, full_name="A", country_code="DE", salary_amount="10000.00", currency_code="EUR"
+    )
     add_employee(session, full_name="B", country_code="US", salary_amount="5000.00")
 
     bands = analytics(session).distribution(

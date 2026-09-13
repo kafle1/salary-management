@@ -11,6 +11,7 @@ from app.domain.employee import (
 )
 from app.domain.employee_draft import EmployeeDraft
 from app.domain.filters import EmployeeFilter, GroupBy, SortSpec
+from app.domain.insights import BandLayout, PeerGapReport
 from app.domain.pagination import Page, PageRequest
 from app.domain.summary import DashboardSummary
 
@@ -83,16 +84,30 @@ class DashboardService:
         self._analytics = analytics
 
     def summary(self, query: DashboardQuery) -> DashboardSummary:
-        filters = EmployeeFilter.build(
-            countries=query.countries,
-            departments=query.departments,
-            roles=query.roles,
-            search=query.search,
-        )
+        filters = _dashboard_filters(query)
         group_by = GroupBy.parse(query.group_by)
-        # the cards and the breakdown answer the same question, so they see the same filter
+        # the cards, the breakdown and the bands answer the same question, so they see one filter
+        overall = self._analytics.overall(filters)
+        bands = (
+            []
+            if overall.highest_salary is None
+            else self._analytics.distribution(filters, BandLayout.covering(overall.highest_salary))
+        )
         return DashboardSummary(
             group_by=group_by,
-            overall=self._analytics.overall(filters),
+            overall=overall,
             groups=self._analytics.by_group(filters, group_by),
+            bands=bands,
         )
+
+    def below_peers(self, query: DashboardQuery, limit: int) -> PeerGapReport:
+        return self._analytics.below_peers(_dashboard_filters(query), limit)
+
+
+def _dashboard_filters(query: DashboardQuery) -> EmployeeFilter:
+    return EmployeeFilter.build(
+        countries=query.countries,
+        departments=query.departments,
+        roles=query.roles,
+        search=query.search,
+    )

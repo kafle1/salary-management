@@ -11,6 +11,7 @@ from typing import Protocol
 from app.domain.employee import Employee, FilterOptions, SalaryChange
 from app.domain.employee_draft import EmployeeDraft
 from app.domain.filters import EmployeeFilter, GroupBy, SortSpec
+from app.domain.insights import BandLayout, PayBand, PeerGapReport
 from app.domain.pagination import Page, PageRequest
 from app.domain.summary import GroupStats, SalaryStats
 
@@ -43,3 +44,7 @@ class SalaryAnalytics(Protocol):
     def overall(self, filters: EmployeeFilter) -> SalaryStats: ...
 
     def by_group(self, filters: EmployeeFilter, group_by: GroupBy) -> list[GroupStats]: ...
+
+    def distribution(self, filters: EmployeeFilter, layout: BandLayout) -> list[PayBand]: ...
+
+    def below_peers(self, filters: EmployeeFilter, limit: int) -> PeerGapReport: ...

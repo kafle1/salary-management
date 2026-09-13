@@ -13,8 +13,10 @@ from app.api.schemas import (
     EmployeePageOut,
     FilterOptionsOut,
     PayableCountryOut,
+    PeerGapReportOut,
 )
 from app.application.queries import DashboardQuery, EmployeeInput, EmployeeQuery
+from app.domain.insights import DEFAULT_PEER_GAP_LIMIT, MAX_PEER_GAP_LIMIT
 from app.domain.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 
 health_router = APIRouter(tags=["health"])
@@ -105,3 +107,21 @@ def dashboard_summary(
         )
     )
     return DashboardSummaryOut.of(summary)
+
+
+@dashboard_router.get("/below-peers", response_model=PeerGapReportOut)
+def below_peers(
+    service: DashboardServiceDep,
+    limit: int = Query(DEFAULT_PEER_GAP_LIMIT, ge=1, le=MAX_PEER_GAP_LIMIT),
+    country: list[str] | None = Query(default=None),
+    department: list[str] | None = Query(default=None),
+    role: list[str] | None = Query(default=None),
+    search: str | None = Query(default=None),
+) -> PeerGapReportOut:
+    report = service.below_peers(
+        DashboardQuery(
+            countries=country or [], departments=department or [], roles=role or [], search=search
+        ),
+        limit,
+    )
+    return PeerGapReportOut.of(report)

@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, delete, func, or_, select
+from sqlalchemy import ColumnElement, Select, and_, case, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -30,6 +30,14 @@ from app.domain.employee import (
 )
 from app.domain.employee_draft import EmployeeDraft
 from app.domain.filters import EmployeeFilter, GroupBy, SortDirection, SortField, SortSpec
+from app.domain.insights import (
+    MIN_PEERS,
+    PEER_GAP_THRESHOLD_PERCENT,
+    BandLayout,
+    PayBand,
+    PeerGap,
+    PeerGapReport,
+)
 from app.domain.money import BASE_CURRENCY, Money, to_cents
 from app.domain.pagination import Page, PageRequest
 from app.domain.summary import GroupStats, SalaryStats
@@ -209,22 +217,19 @@ class SqlSalaryAnalytics:
 
     def overall(self, filters: EmployeeFilter) -> SalaryStats:
         conditions = _conditions(filters)
-        headcount, total = self._session.execute(
-            select(func.count(), func.sum(SALARY_IN_BASE))
-            .select_from(EmployeeRow)
-            .join(RateRow, _RATE_JOIN)
-            .where(*conditions)
+        headcount, total, lowest, highest = self._session.execute(
+            select(*_TOTALS).select_from(EmployeeRow).join(RateRow, _RATE_JOIN).where(*conditions)
         ).one()
         if not headcount:
             return SalaryStats()
-        median = self._session.execute(self._median_query(conditions)).scalar_one_or_none()
-        return _build_stats(int(headcount), _as_decimal(total), _as_decimal(median))
+        median = self._session.execute(_median_query(conditions)).scalar_one_or_none()
+        return _build_stats(int(headcount), total, median, lowest, highest)
 
     def by_group(self, filters: EmployeeFilter, group_by: GroupBy) -> list[GroupStats]:
         conditions = _conditions(filters)
         column = _GROUP_COLUMNS[group_by]
         totals = self._session.execute(
-            select(column, func.count(), func.sum(SALARY_IN_BASE))
+            select(column, *_TOTALS)
             .select_from(EmployeeRow)
             .join(RateRow, _RATE_JOIN)
             .where(*conditions)
@@ -232,67 +237,141 @@ class SqlSalaryAnalytics:
         ).all()
         if not totals:
             return []
-        medians = dict(self._session.execute(self._median_query(conditions, column)).all())
+        medians = {
+            key: median
+            for key, median, _ in self._session.execute(_median_query(conditions, column))
+        }
 
         groups = [
             GroupStats(
                 key=str(key),
                 label=name_for(str(key)) if group_by is GroupBy.COUNTRY else str(key),
-                stats=_build_stats(
-                    int(headcount), _as_decimal(total), _as_decimal(medians.get(key))
-                ),
+                stats=_build_stats(int(headcount), total, medians.get(key), lowest, highest),
             )
-            for key, headcount, total in totals
+            for key, headcount, total, lowest, highest in totals
         ]
         # at most a few dozen groups, so the ordering is cheaper here than a third query
         groups.sort(key=lambda group: (-group.stats.total_payroll, group.key))
         return groups
 
-    def _median_query(
-        self, conditions: list[ColumnElement[bool]], group_column: Any | None = None
-    ) -> Select[Any]:
-        """Median without percentile_cont, so the same SQL runs on Postgres and SQLite.
-
-        Number the rows within each group by pay, then keep the middle one or two. The test
-        `rn * 2 IN (cnt, cnt + 1, cnt + 2)` picks exactly the middle row when the count is odd and
-        exactly the middle pair when it is even, using only integer arithmetic. Doing it with a
-        division instead would depend on whether the dialect treats `/` as integer division.
-        """
-        partition = [group_column] if group_column is not None else []
-        selected: list[Any] = [SALARY_IN_BASE.label("value")]
-        if group_column is not None:
-            selected.insert(0, group_column.label("grp"))
-        ranked = (
-            select(
-                *selected,
-                func.row_number()
-                .over(partition_by=partition, order_by=SALARY_IN_BASE)
-                .label("rn"),
-                func.count().over(partition_by=partition).label("cnt"),
-            )
+    def distribution(self, filters: EmployeeFilter, layout: BandLayout) -> list[PayBand]:
+        # a CASE over the edges rather than floor(salary / width): floor is not in every SQLite
+        # build, and a numeric to integer cast rounds on Postgres but truncates on SQLite
+        band = case(
+            *[(upper > SALARY_IN_BASE, index) for index, upper in enumerate(layout.upper_edges())],
+            else_=layout.count - 1,
+        )
+        banded = (
+            select(band.label("band"))
             .select_from(EmployeeRow)
             .join(RateRow, _RATE_JOIN)
-            .where(*conditions)
+            .where(*_conditions(filters))
             .subquery()
         )
-        middle = ranked.c.rn * 2
-        keep = middle.in_([ranked.c.cnt, ranked.c.cnt + 1, ranked.c.cnt + 2])
-        if group_column is None:
-            return select(func.avg(ranked.c.value)).where(keep)
-        return (
-            select(ranked.c.grp, func.avg(ranked.c.value)).where(keep).group_by(ranked.c.grp)
+        counts = self._session.execute(
+            select(banded.c.band, func.count()).group_by(banded.c.band)
+        ).all()
+        return layout.bands({int(index): int(headcount) for index, headcount in counts})
+
+    def below_peers(self, filters: EmployeeFilter, limit: int) -> PeerGapReport:
+        # the peer median is taken over everyone in the role and country, whatever the filter says.
+        # narrowing to one department changes who is listed, never what "normal" means for them
+        peers = _median_query([], EmployeeRow.role, EmployeeRow.country_code).subquery()
+        matches = (
+            _employee_select()
+            .add_columns(peers.c.median.label("peer_median"), peers.c.headcount.label("peers"))
+            .join(
+                peers,
+                and_(
+                    EmployeeRow.role == peers.c.role,
+                    EmployeeRow.country_code == peers.c.country_code,
+                ),
+            )
+            .where(
+                *_conditions(filters),
+                peers.c.headcount >= MIN_PEERS,
+                peers.c.median * PEER_GAP_THRESHOLD_PERCENT > SALARY_IN_BASE * 100,
+            )
+        )
+        total = self._session.execute(
+            select(func.count()).select_from(matches.subquery())
+        ).scalar_one()
+        rows = self._session.execute(
+            matches.order_by(SALARY_IN_BASE / peers.c.median, EmployeeRow.id).limit(limit)
+        ).all()
+        return PeerGapReport(
+            total=int(total),
+            items=[
+                PeerGap(
+                    employee=_to_employee(row),
+                    peer_median=to_cents(_as_decimal(row.peer_median) or Decimal("0")),
+                    peers=int(row.peers),
+                )
+                for row in rows
+            ],
         )
 
 
-def _build_stats(headcount: int, total: Decimal | None, median: Decimal | None) -> SalaryStats:
-    payroll = to_cents(total or Decimal("0"))
+_TOTALS = (
+    func.count(),
+    func.sum(SALARY_IN_BASE),
+    func.min(SALARY_IN_BASE),
+    func.max(SALARY_IN_BASE),
+)
+
+
+def _median_query(conditions: list[ColumnElement[bool]], *group_columns: Any) -> Select[Any]:
+    """Median without percentile_cont, so the same SQL runs on Postgres and SQLite.
+
+    Number the rows within each group by pay, then keep the middle one or two. The test
+    `rn * 2 IN (cnt, cnt + 1, cnt + 2)` picks exactly the middle row when the count is odd and
+    exactly the middle pair when it is even, using only integer arithmetic. Doing it with a
+    division instead would depend on whether the dialect treats `/` as integer division.
+
+    Selects the group columns under their own names, then `median` and `headcount`.
+    """
+    partition = list(group_columns)
+    ranked = (
+        select(
+            *[column.label(column.key) for column in group_columns],
+            SALARY_IN_BASE.label("value"),
+            func.row_number().over(partition_by=partition, order_by=SALARY_IN_BASE).label("rn"),
+            func.count().over(partition_by=partition).label("cnt"),
+        )
+        .select_from(EmployeeRow)
+        .join(RateRow, _RATE_JOIN)
+        .where(*conditions)
+        .subquery()
+    )
+    middle = ranked.c.rn * 2
+    keys = [ranked.c[column.key] for column in group_columns]
+    return (
+        select(
+            *keys,
+            func.avg(ranked.c.value).label("median"),
+            func.max(ranked.c.cnt).label("headcount"),
+        )
+        .where(middle.in_([ranked.c.cnt, ranked.c.cnt + 1, ranked.c.cnt + 2]))
+        .group_by(*keys)
+    )
+
+
+def _build_stats(headcount: int, total: Any, median: Any, lowest: Any, highest: Any) -> SalaryStats:
+    payroll = to_cents(_as_decimal(total) or Decimal("0"))
     return SalaryStats(
         headcount=headcount,
         total_payroll=payroll,
         # derived rather than a second AVG, so the cards on the dashboard always agree
         average_salary=to_cents(payroll / headcount) if headcount else None,
-        median_salary=to_cents(median) if median is not None else None,
+        median_salary=_cents_or_none(median),
+        lowest_salary=_cents_or_none(lowest),
+        highest_salary=_cents_or_none(highest),
     )
+
+
+def _cents_or_none(value: Any) -> Decimal | None:
+    amount = _as_decimal(value)
+    return to_cents(amount) if amount is not None else None
 
 
 def _employee_select() -> Select[Any]:
