@@ -165,3 +165,104 @@ def test_an_unknown_grouping_is_a_400(client: TestClient):
     response = client.get("/dashboard/summary", params={"group_by": "astrology"})
 
     assert response.status_code == 400
+
+
+def new_hire(**overrides) -> dict:
+    body = {
+        "full_name": "Mary Jackson",
+        "email": "mary@acme.test",
+        "country_code": "DE",
+        "department": "Engineering",
+        "role": "Engineer",
+        "hire_date": "2025-02-03",
+        "salary_amount": "60000",
+    }
+    body.update(overrides)
+    return body
+
+
+def test_adding_someone_returns_them_in_the_currency_their_country_pays(client: TestClient):
+    response = client.post("/employees", json=new_hire())
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["email"] == "mary@acme.test"
+    assert body["salary"] == {"amount": "60000.00", "currency": "EUR"}
+    assert body["salary_in_base"] == {"amount": "120000.00", "currency": "USD"}
+
+
+def test_a_bad_form_names_every_field_that_needs_fixing(client: TestClient):
+    response = client.post(
+        "/employees", json={"full_name": " ", "email": "nope", "salary_amount": "-5"}
+    )
+
+    assert response.status_code == 422
+    errors = response.json()["errors"]
+    assert set(errors) == {
+        "full_name",
+        "email",
+        "country_code",
+        "department",
+        "role",
+        "hire_date",
+        "salary_amount",
+    }
+
+
+def test_an_email_already_on_file_is_a_409_pointing_at_the_email_field(client: TestClient):
+    client.post("/employees", json=new_hire())
+
+    response = client.post("/employees", json=new_hire(full_name="Someone Else"))
+
+    assert response.status_code == 409
+    assert "email" in response.json()["errors"]
+
+
+def test_one_employee_comes_with_their_salary_history(client: TestClient):
+    created = client.post("/employees", json=new_hire(salary_note="Offer")).json()
+
+    body = client.get(f"/employees/{created['id']}").json()
+
+    assert body["full_name"] == "Mary Jackson"
+    assert body["history"] == [
+        {
+            "changed_on": body["history"][0]["changed_on"],
+            "previous": None,
+            "new": {"amount": "60000.00", "currency": "EUR"},
+            "note": "Offer",
+        }
+    ]
+
+
+def test_a_raise_shows_up_first_in_the_history(client: TestClient):
+    created = client.post("/employees", json=new_hire()).json()
+
+    response = client.put(
+        f"/employees/{created['id']}", json=new_hire(salary_amount="65000", salary_note="Review")
+    )
+
+    assert response.status_code == 200
+    assert response.json()["salary"]["amount"] == "65000.00"
+    latest = client.get(f"/employees/{created['id']}").json()["history"][0]
+    assert latest["previous"] == {"amount": "60000.00", "currency": "EUR"}
+    assert latest["note"] == "Review"
+
+
+def test_someone_who_does_not_exist_is_a_404_on_every_verb(client: TestClient):
+    assert client.get("/employees/999").status_code == 404
+    assert client.put("/employees/999", json=new_hire()).status_code == 404
+    assert client.delete("/employees/999").status_code == 404
+
+
+def test_deleting_someone_removes_them(client: TestClient):
+    created = client.post("/employees", json=new_hire()).json()
+
+    assert client.delete(f"/employees/{created['id']}").status_code == 204
+    assert client.get(f"/employees/{created['id']}").status_code == 404
+
+
+def test_the_form_gets_its_countries_and_currencies_from_the_api(client: TestClient):
+    countries = client.get("/countries").json()
+
+    assert {"code": "DE", "name": "Germany", "currency": "EUR"} in countries
+    assert len(countries) == 8
