@@ -13,6 +13,7 @@ next-env.d.ts
 # env
 .env
 .env.local
+.vercel
 
 # os
 .DS_Store

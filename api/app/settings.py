@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,15 @@ class Settings(BaseSettings):
     # comma separated rather than json, because a json list in a compose env var is a foot gun
     cors_origins: str = "http://localhost:3000"
     sql_echo: bool = False
+
+    @field_validator("database_url")
+    @classmethod
+    def _use_psycopg(cls, url: str) -> str:
+        # hosted postgres hands out postgres:// urls, which sqlalchemy maps to psycopg2
+        for prefix in ("postgres://", "postgresql://"):
+            if url.startswith(prefix):
+                return "postgresql+psycopg://" + url.removeprefix(prefix)
+        return url
 
     @property
     def allowed_origins(self) -> list[str]:
