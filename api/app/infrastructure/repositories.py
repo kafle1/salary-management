@@ -11,20 +11,31 @@ Two rules run through all of it:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, func, or_, select
+from sqlalchemy import ColumnElement, Select, delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.countries import name_for
-from app.domain.employee import Employee, FilterOptions
+from app.domain.employee import (
+    EmailAlreadyUsed,
+    Employee,
+    EmployeeNotFound,
+    FilterOptions,
+    SalaryChange,
+)
+from app.domain.employee_draft import EmployeeDraft
 from app.domain.filters import EmployeeFilter, GroupBy, SortDirection, SortField, SortSpec
 from app.domain.money import BASE_CURRENCY, Money, to_cents
 from app.domain.pagination import Page, PageRequest
 from app.domain.summary import GroupStats, SalaryStats
 from app.infrastructure.models import Employee as EmployeeRow
 from app.infrastructure.models import ExchangeRate as RateRow
+from app.infrastructure.models import SalaryChange as SalaryChangeRow
 
 SALARY_IN_BASE = EmployeeRow.salary_amount * RateRow.usd_per_unit
 
@@ -101,6 +112,73 @@ class SqlEmployeeRepository:
             roles=self._distinct(EmployeeRow.role),
         )
 
+    def get(self, employee_id: int) -> Employee | None:
+        row = self._session.execute(
+            _employee_select().where(EmployeeRow.id == employee_id)
+        ).one_or_none()
+        return _to_employee(row) if row is not None else None
+
+    def history(self, employee_id: int) -> list[SalaryChange]:
+        rows = self._session.execute(
+            select(SalaryChangeRow)
+            .where(SalaryChangeRow.employee_id == employee_id)
+            .order_by(SalaryChangeRow.changed_on.desc(), SalaryChangeRow.id.desc())
+        ).scalars()
+        return [_to_salary_change(row) for row in rows]
+
+    def email_taken(self, email: str, exclude_id: int | None = None) -> bool:
+        stmt = select(EmployeeRow.id).where(EmployeeRow.email == email)
+        if exclude_id is not None:
+            stmt = stmt.where(EmployeeRow.id != exclude_id)
+        return self._session.execute(stmt.limit(1)).first() is not None
+
+    def create(self, draft: EmployeeDraft) -> Employee:
+        with self._saving(draft.email):
+            row = EmployeeRow(**_columns(draft))
+            self._session.add(row)
+            self._session.flush()
+            employee_id = row.id
+            self._session.add(_salary_change(employee_id, None, draft))
+        return self._reload(employee_id)
+
+    def update(
+        self, employee_id: int, draft: EmployeeDraft, *, record_salary_change: bool
+    ) -> Employee:
+        row = self._session.get(EmployeeRow, employee_id)
+        if row is None:
+            raise EmployeeNotFound(employee_id)
+        previous = Money(_as_decimal(row.salary_amount) or Decimal("0"), row.currency_code)
+        with self._saving(draft.email, exclude_id=employee_id):
+            for column, value in _columns(draft).items():
+                setattr(row, column, value)
+            if record_salary_change:
+                self._session.add(_salary_change(employee_id, previous, draft))
+        return self._reload(employee_id)
+
+    def delete(self, employee_id: int) -> bool:
+        # the history goes with it through ON DELETE CASCADE
+        result = self._session.execute(delete(EmployeeRow).where(EmployeeRow.id == employee_id))
+        self._session.commit()
+        return result.rowcount > 0
+
+    @contextmanager
+    def _saving(self, email: str, exclude_id: int | None = None) -> Iterator[None]:
+        try:
+            yield
+            self._session.commit()
+        except IntegrityError:
+            self._session.rollback()
+            # the service already checked, so this is two people saving the same email at once
+            if self.email_taken(email, exclude_id):
+                raise EmailAlreadyUsed(email) from None
+            raise
+
+    def _reload(self, employee_id: int) -> Employee:
+        employee = self.get(employee_id)
+        if employee is None:
+            raise EmployeeNotFound(employee_id)
+        return employee
+
     def _count(self, conditions: list[ColumnElement[bool]]) -> int:
         # no filter touches the rates table, so the count does not pay for the join
         stmt = select(func.count()).select_from(EmployeeRow).where(*conditions)
@@ -112,20 +190,7 @@ class SqlEmployeeRepository:
         column = _SORT_COLUMNS[sort.field]
         ordering = column.desc() if sort.direction is SortDirection.DESC else column.asc()
         return (
-            select(
-                EmployeeRow.id,
-                EmployeeRow.full_name,
-                EmployeeRow.email,
-                EmployeeRow.country_code,
-                EmployeeRow.department,
-                EmployeeRow.role,
-                EmployeeRow.hire_date,
-                EmployeeRow.salary_amount,
-                EmployeeRow.currency_code,
-                SALARY_IN_BASE.label("salary_in_base"),
-            )
-            .select_from(EmployeeRow)
-            .join(RateRow, _RATE_JOIN)
+            _employee_select()
             .where(*conditions)
             # id last, always. without a total order two pages of the same query can overlap.
             .order_by(ordering, EmployeeRow.id.asc())
@@ -227,6 +292,66 @@ def _build_stats(headcount: int, total: Decimal | None, median: Decimal | None) 
         # derived rather than a second AVG, so the cards on the dashboard always agree
         average_salary=to_cents(payroll / headcount) if headcount else None,
         median_salary=to_cents(median) if median is not None else None,
+    )
+
+
+def _employee_select() -> Select[Any]:
+    return (
+        select(
+            EmployeeRow.id,
+            EmployeeRow.full_name,
+            EmployeeRow.email,
+            EmployeeRow.country_code,
+            EmployeeRow.department,
+            EmployeeRow.role,
+            EmployeeRow.hire_date,
+            EmployeeRow.salary_amount,
+            EmployeeRow.currency_code,
+            SALARY_IN_BASE.label("salary_in_base"),
+        )
+        .select_from(EmployeeRow)
+        .join(RateRow, _RATE_JOIN)
+    )
+
+
+def _columns(draft: EmployeeDraft) -> dict[str, Any]:
+    return {
+        "full_name": draft.full_name,
+        "email": draft.email,
+        "country_code": draft.country_code,
+        "department": draft.department,
+        "role": draft.role,
+        "hire_date": draft.hire_date,
+        "salary_amount": draft.salary.amount,
+        "currency_code": draft.salary.currency,
+    }
+
+
+def _salary_change(
+    employee_id: int, previous: Money | None, draft: EmployeeDraft
+) -> SalaryChangeRow:
+    return SalaryChangeRow(
+        employee_id=employee_id,
+        previous_amount=previous.amount if previous else None,
+        previous_currency=previous.currency if previous else None,
+        new_amount=draft.salary.amount,
+        new_currency=draft.salary.currency,
+        note=draft.salary_note,
+    )
+
+
+def _to_salary_change(row: SalaryChangeRow) -> SalaryChange:
+    previous_amount = _as_decimal(row.previous_amount)
+    previous = (
+        Money(previous_amount, row.previous_currency)
+        if previous_amount is not None and row.previous_currency
+        else None
+    )
+    return SalaryChange(
+        changed_on=row.changed_on,
+        previous=previous,
+        new=Money(_as_decimal(row.new_amount) or Decimal("0"), row.new_currency),
+        note=row.note,
     )
 
 

@@ -17,11 +17,11 @@ from decimal import Decimal
 from random import Random
 from typing import Any
 
-from sqlalchemy import delete, insert
+from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
 from app.domain.countries import BY_CODE
-from app.infrastructure.models import Employee, ExchangeRate
+from app.infrastructure.models import Employee, ExchangeRate, SalaryChange
 
 DEFAULT_SEED = 20260906
 DEFAULT_COUNT = 10_000
@@ -183,7 +183,16 @@ def insert_employees(
 
 
 def seed_all(session: Session, count: int = DEFAULT_COUNT, seed: int = DEFAULT_SEED) -> int:
-    # children before parents, every employee row points at a rate row
+    # children before parents: history points at employees, employees point at rates
+    session.execute(delete(SalaryChange))
     session.execute(delete(Employee))
     seed_exchange_rates(session)
-    return insert_employees(session, count, seed)
+    written = insert_employees(session, count, seed)
+    # everyone's history starts with what they were hired on, in one statement
+    session.execute(
+        insert(SalaryChange).from_select(
+            ["employee_id", "changed_on", "new_amount", "new_currency"],
+            select(Employee.id, Employee.hire_date, Employee.salary_amount, Employee.currency_code),
+        )
+    )
+    return written

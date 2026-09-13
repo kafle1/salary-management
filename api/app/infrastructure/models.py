@@ -49,3 +49,24 @@ class Employee(Base):
         Index("ix_employees_role", "role"),
         CheckConstraint("salary_amount >= 0", name="ck_employees_salary_non_negative"),
     )
+
+
+class SalaryChange(Base):
+    """Append-only. One row for the salary someone was added on, one more each time it moves."""
+
+    __tablename__ = "salary_changes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"), nullable=False
+    )
+    changed_on: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    previous_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    previous_currency: Mapped[str | None] = mapped_column(String(3))
+    new_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    new_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    note: Mapped[str | None] = mapped_column(String(200))
+
+    __table_args__ = (
+        Index("ix_salary_changes_employee_changed_on", "employee_id", "changed_on"),
+    )
