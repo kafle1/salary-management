@@ -13,7 +13,9 @@ from typing import Annotated
 
 from pydantic import BaseModel, PlainSerializer
 
-from app.domain.employee import Employee, FilterOptions
+from app.domain.countries import COUNTRIES
+from app.domain.employee import Employee, EmployeeDetail, FilterOptions, SalaryChange
+from app.domain.money import Money
 from app.domain.pagination import Page
 from app.domain.summary import DashboardSummary, SalaryStats
 
@@ -26,9 +28,27 @@ MoneyAmount = Annotated[Decimal, PlainSerializer(_as_fixed, return_type=str)]
 OptionalMoneyAmount = Annotated[Decimal | None, PlainSerializer(_as_fixed, return_type=str | None)]
 
 
+class EmployeeIn(BaseModel):
+    """Every field optional and loosely typed on purpose: the domain checks them all at once and
+    names each one that is wrong, which a pydantic failure on the first bad type would not."""
+
+    full_name: str | None = None
+    email: str | None = None
+    country_code: str | None = None
+    department: str | None = None
+    role: str | None = None
+    hire_date: str | None = None
+    salary_amount: str | int | float | None = None
+    salary_note: str | None = None
+
+
 class MoneyOut(BaseModel):
     amount: MoneyAmount
     currency: str
+
+    @classmethod
+    def of(cls, money: Money) -> MoneyOut:
+        return cls(amount=money.amount, currency=money.currency)
 
 
 class EmployeeOut(BaseModel):
@@ -54,11 +74,46 @@ class EmployeeOut(BaseModel):
             department=employee.department,
             role=employee.role,
             hire_date=employee.hire_date,
-            salary=MoneyOut(amount=employee.salary.amount, currency=employee.salary.currency),
-            salary_in_base=MoneyOut(
-                amount=employee.salary_in_base.amount, currency=employee.salary_in_base.currency
-            ),
+            salary=MoneyOut.of(employee.salary),
+            salary_in_base=MoneyOut.of(employee.salary_in_base),
         )
+
+
+class SalaryChangeOut(BaseModel):
+    changed_on: date
+    previous: MoneyOut | None
+    new: MoneyOut
+    note: str | None
+
+    @classmethod
+    def of(cls, change: SalaryChange) -> SalaryChangeOut:
+        return cls(
+            changed_on=change.changed_on,
+            previous=MoneyOut.of(change.previous) if change.previous else None,
+            new=MoneyOut.of(change.new),
+            note=change.note,
+        )
+
+
+class EmployeeDetailOut(EmployeeOut):
+    history: list[SalaryChangeOut]
+
+    @classmethod
+    def of_detail(cls, detail: EmployeeDetail) -> EmployeeDetailOut:
+        return cls(
+            **EmployeeOut.of(detail.employee).model_dump(),
+            history=[SalaryChangeOut.of(change) for change in detail.history],
+        )
+
+
+class PayableCountryOut(BaseModel):
+    code: str
+    name: str
+    currency: str
+
+    @classmethod
+    def all(cls) -> list[PayableCountryOut]:
+        return [cls(code=c.code, name=c.name, currency=c.currency) for c in COUNTRIES]
 
 
 class EmployeePageOut(BaseModel):

@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import DashboardServiceDep, EmployeeServiceDep
-from app.api.schemas import DashboardSummaryOut, EmployeePageOut, FilterOptionsOut
-from app.application.queries import DashboardQuery, EmployeeQuery
+from app.api.schemas import (
+    DashboardSummaryOut,
+    EmployeeDetailOut,
+    EmployeeIn,
+    EmployeeOut,
+    EmployeePageOut,
+    FilterOptionsOut,
+    PayableCountryOut,
+)
+from app.application.queries import DashboardQuery, EmployeeInput, EmployeeQuery
 from app.domain.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 
 health_router = APIRouter(tags=["health"])
@@ -17,6 +25,11 @@ dashboard_router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 @health_router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@health_router.get("/countries", response_model=list[PayableCountryOut], tags=["reference"])
+def countries() -> list[PayableCountryOut]:
+    return PayableCountryOut.all()
 
 
 @employees_router.get("", response_model=EmployeePageOut)
@@ -49,6 +62,28 @@ def list_employees(
 @employees_router.get("/filter-options", response_model=FilterOptionsOut)
 def filter_options(service: EmployeeServiceDep) -> FilterOptionsOut:
     return FilterOptionsOut.of(service.filter_options())
+
+
+@employees_router.post("", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED)
+def create_employee(body: EmployeeIn, service: EmployeeServiceDep) -> EmployeeOut:
+    return EmployeeOut.of(service.create(EmployeeInput(**body.model_dump())))
+
+
+# after /filter-options, or that path would be read as an id
+@employees_router.get("/{employee_id}", response_model=EmployeeDetailOut)
+def get_employee(employee_id: int, service: EmployeeServiceDep) -> EmployeeDetailOut:
+    return EmployeeDetailOut.of_detail(service.get(employee_id))
+
+
+@employees_router.put("/{employee_id}", response_model=EmployeeOut)
+def update_employee(employee_id: int, body: EmployeeIn, service: EmployeeServiceDep) -> EmployeeOut:
+    return EmployeeOut.of(service.update(employee_id, EmployeeInput(**body.model_dump())))
+
+
+@employees_router.delete("/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_employee(employee_id: int, service: EmployeeServiceDep) -> Response:
+    service.delete(employee_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @dashboard_router.get("/summary", response_model=DashboardSummaryOut)
