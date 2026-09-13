@@ -19,3 +19,4 @@ written down here because they are the interesting part.
 | `2026-09-06-04-seed-data.md` | Deterministic 10,000-row seed |
 | `2026-09-06-05-frontend.md` | Two pages, filter state in the URL |
 | `2026-09-06-06-review-pass.md` | Reviewing the assistant's output, and what I threw away |
+| `2026-09-13-07-management-and-insights.md` | Editing pay, pay history, pay bands, the pay review list, and the deploy |

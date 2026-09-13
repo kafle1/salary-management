@@ -44,6 +44,8 @@ Compose setup plus the demo video are weighted equally. Pick whichever ships soo
 What it changed: Compose plus video. It ships sooner and it is the artifact a reviewer can
 actually read.
 
+Later, on 13 Sep: it is deployed on free tiers too, so there is a link to click as well.
+
 ## Also settled
 
 Priority order, in the reviewer's words: clean code architecture first, then server-side
