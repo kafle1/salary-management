@@ -21,6 +21,15 @@ export type Employee = {
   salary_in_base: Money;
 };
 
+export type SalaryChange = {
+  changed_on: string;
+  previous: Money | null;
+  new: Money;
+  note: string | null;
+};
+
+export type EmployeeDetail = Employee & { history: SalaryChange[] };
+
 export type EmployeePage = {
   items: Employee[];
   page: number;
@@ -36,15 +45,34 @@ export type SalaryStats = {
   total_payroll: string;
   average_salary: string | null;
   median_salary: string | null;
+  lowest_salary: string | null;
+  highest_salary: string | null;
 };
 
 export type GroupStats = SalaryStats & { key: string; label: string };
+
+export type PayBand = { lower: string; upper: string; headcount: number };
 
 export type DashboardSummary = {
   base_currency: string;
   group_by: string;
   overall: SalaryStats;
   groups: GroupStats[];
+  bands: PayBand[];
+};
+
+export type PeerGap = {
+  employee: Employee;
+  peer_median: Money;
+  peers: number;
+  percent_of_median: number;
+};
+
+export type PeerGapReport = {
+  threshold_percent: number;
+  min_peers: number;
+  total: number;
+  items: PeerGap[];
 };
 
 export type FilterOptions = {
@@ -52,6 +80,8 @@ export type FilterOptions = {
   departments: string[];
   roles: string[];
 };
+
+export type PayableCountry = { code: string; name: string; currency: string };
 
 export class ApiError extends Error {
   constructor(
@@ -62,7 +92,7 @@ export class ApiError extends Error {
   }
 }
 
-async function getJson<T>(path: string, params: URLSearchParams): Promise<T> {
+async function getJson<T>(path: string, params = new URLSearchParams()): Promise<T> {
   const query = params.toString();
   const response = await fetch(`${API_BASE_URL}${path}${query ? `?${query}` : ""}`, {
     cache: "no-store",
@@ -78,12 +108,53 @@ export function fetchEmployees(params: URLSearchParams): Promise<EmployeePage> {
   return getJson<EmployeePage>("/employees", params);
 }
 
+export function fetchEmployee(id: number): Promise<EmployeeDetail> {
+  return getJson<EmployeeDetail>(`/employees/${id}`);
+}
+
 export function fetchFilterOptions(): Promise<FilterOptions> {
-  return getJson<FilterOptions>("/employees/filter-options", new URLSearchParams());
+  return getJson<FilterOptions>("/employees/filter-options");
+}
+
+export function fetchCountries(): Promise<PayableCountry[]> {
+  return getJson<PayableCountry[]>("/countries");
 }
 
 export function fetchSummary(params: URLSearchParams): Promise<DashboardSummary> {
   return getJson<DashboardSummary>("/dashboard/summary", params);
+}
+
+export function fetchBelowPeers(params: URLSearchParams): Promise<PeerGapReport> {
+  return getJson<PeerGapReport>("/dashboard/below-peers", params);
+}
+
+export type WriteResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; status: number; detail: string; errors: Record<string, string> };
+
+/** Writes hand back the API's field errors instead of throwing, so a form can show them. */
+export async function sendJson<T>(
+  method: "POST" | "PUT" | "DELETE",
+  path: string,
+  body?: unknown,
+): Promise<WriteResult<T>> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (response.ok) {
+    const data = response.status === 204 ? null : await response.json();
+    return { ok: true, data: data as T };
+  }
+  const payload = await response.json().catch(() => ({}));
+  return {
+    ok: false,
+    status: response.status,
+    detail: typeof payload.detail === "string" ? payload.detail : response.statusText,
+    errors: payload.errors ?? {},
+  };
 }
 
 /** A 422 from a hand-edited url and a dead API are different problems, so say which. */

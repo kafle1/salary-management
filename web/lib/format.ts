@@ -19,6 +19,7 @@ export function compactMoney(amount: string | null, currency: string): string {
     style: "currency",
     currency,
     notation: "compact",
+    minimumFractionDigits: 0,
     maximumFractionDigits: 1,
   }).format(Number(amount));
 }
@@ -40,4 +41,16 @@ export function hireDate(value: string): string {
     year: "numeric",
     timeZone: "UTC",
   });
+}
+
+/** "4 yr 2 mo" from a hire date, measured against today in UTC. */
+export function tenure(value: string, now = new Date()): string {
+  const hired = new Date(`${value}T00:00:00Z`);
+  let months =
+    (now.getUTCFullYear() - hired.getUTCFullYear()) * 12 + now.getUTCMonth() - hired.getUTCMonth();
+  if (now.getUTCDate() < hired.getUTCDate()) months -= 1;
+  if (months < 1) return "under a month";
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  return [years ? `${years} yr` : "", rest ? `${rest} mo` : ""].filter(Boolean).join(" ");
 }

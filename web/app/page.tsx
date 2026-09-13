@@ -1,17 +1,43 @@
+import { ArrowRightIcon } from "lucide-react";
+import Link from "next/link";
+import { GroupChart, PayBandsChart } from "@/components/charts";
 import { FilterBar } from "@/components/filter-bar";
-import { GroupBySelect } from "@/components/group-by-select";
+import { ApiUnavailable, PageHeader } from "@/components/page";
+import { PeerGapTable } from "@/components/peer-gap-table";
+import { buttonVariants } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  describeError,
+  fetchBelowPeers,
   fetchFilterOptions,
   fetchSummary,
   type DashboardSummary,
   type FilterOptions,
+  type PeerGapReport,
 } from "@/lib/api";
 import { compactMoney, count, money, percent } from "@/lib/format";
-import { first, toApiParams, type RawSearchParams } from "@/lib/query";
+import { first, toApiParams, withParams, type RawSearchParams } from "@/lib/query";
 
 // filters live in the url, so every render is a fresh answer to a specific question
 export const dynamic = "force-dynamic";
+
+const GROUP_NAMES: Record<string, string> = {
+  country: "country",
+  department: "department",
+  role: "role",
+};
+
+function Kpi({ label, value, note }: { label: string; value: string; note: string }) {
+  return (
+    <Card className="gap-1">
+      <CardHeader>
+        <CardDescription>{label}</CardDescription>
+        <CardTitle className="text-xl font-semibold tabular-nums sm:text-2xl">{value}</CardTitle>
+      </CardHeader>
+      <CardContent className="text-xs text-muted-foreground">{note}</CardContent>
+    </Card>
+  );
+}
 
 export default async function DashboardPage({
   searchParams,
@@ -23,110 +49,183 @@ export default async function DashboardPage({
 
   let summary: DashboardSummary;
   let options: FilterOptions;
+  let peers: PeerGapReport;
   try {
-    [summary, options] = await Promise.all([
+    [summary, options, peers] = await Promise.all([
       fetchSummary(toApiParams(params, { group_by: groupBy })),
       fetchFilterOptions(),
+      fetchBelowPeers(toApiParams(params, { limit: "5" })),
     ]);
   } catch (error) {
-    return (
-      <>
-        <h1>Payroll overview</h1>
-        <p className="error">
-          Could not load this view. If nothing is running, start the stack with{" "}
-          <code>docker compose up</code>. ({describeError(error)})
-        </p>
-      </>
-    );
+    return <ApiUnavailable title="Payroll overview" error={error} />;
   }
 
-  const { overall, groups, base_currency: base } = summary;
-  const biggest = groups[0]?.total_payroll ?? "0";
+  const { overall, groups, bands, base_currency: base } = summary;
+  const groupName = GROUP_NAMES[summary.group_by] ?? summary.group_by;
+  const biggest = groups.reduce((max, g) => Math.max(max, Number(g.total_payroll)), 0);
 
   return (
     <>
-      <h1>Payroll overview</h1>
-      <p className="lede">
-        Everything is normalised to {base} through the seeded rate table. Filters apply to the cards
-        and the breakdown together.
-      </p>
+      <PageHeader
+        title="Payroll overview"
+        description={`Everyone's pay converted to ${base} with the stored exchange rates. Filters apply to the whole page.`}
+      />
 
-      <FilterBar basePath="/" params={params} options={options}>
-        <GroupBySelect params={params} />
-      </FilterBar>
+      <FilterBar params={params} options={options} groupBy />
 
-      <section className="kpis">
-        <article className="kpi">
-          <div className="label">Headcount</div>
-          <div className="value">{count(overall.headcount)}</div>
-          <div className="note">people in this selection</div>
-        </article>
-        <article className="kpi">
-          <div className="label">Total payroll spend</div>
-          <div className="value" title={money(overall.total_payroll, base, 2)}>
-            {compactMoney(overall.total_payroll, base)}
-          </div>
-          <div className="note">{money(overall.total_payroll, base)} per year</div>
-        </article>
-        <article className="kpi">
-          <div className="label">Average pay</div>
-          <div className="value">{money(overall.average_salary, base)}</div>
-          <div className="note">mean, pulled up by the top of the org</div>
-        </article>
-        <article className="kpi">
-          <div className="label">Median pay</div>
-          <div className="value">{money(overall.median_salary, base)}</div>
-          <div className="note">what a typical person here earns</div>
-        </article>
-      </section>
+      {overall.headcount === 0 ? (
+        <Card>
+          <CardContent className="py-10 text-center text-muted-foreground">
+            No one matches these filters.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <Kpi label="People" value={count(overall.headcount)} note="in this selection" />
+            <Kpi
+              label="Payroll per year"
+              value={compactMoney(overall.total_payroll, base)}
+              note={money(overall.total_payroll, base)}
+            />
+            <Kpi
+              label="Median pay"
+              value={money(overall.median_salary, base)}
+              note={`Average is ${money(overall.average_salary, base)}`}
+            />
+            <Kpi
+              label="Pay range"
+              value={`${compactMoney(overall.lowest_salary, base)} to ${compactMoney(overall.highest_salary, base)}`}
+              note="lowest to highest paid"
+            />
+          </section>
 
-      <div className="panel">
-        <div className="panel-head">
-          <span>Broken down by {summary.group_by}</span>
-          <span>{groups.length} groups, ordered by spend</span>
+          <section className="grid gap-4 lg:grid-cols-5">
+            <Card className="lg:col-span-3">
+              <CardHeader>
+                <CardTitle>Pay by {groupName}</CardTitle>
+                <CardDescription>Ordered by total spend. Hover a bar for the numbers.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <GroupChart
+                  data={groups.map((g) => ({
+                    label: g.label,
+                    headcount: g.headcount,
+                    median: Number(g.median_salary ?? 0),
+                    average: Number(g.average_salary ?? 0),
+                    total: Number(g.total_payroll),
+                  }))}
+                />
+              </CardContent>
+            </Card>
+
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle>How pay is spread</CardTitle>
+                <CardDescription>
+                  People in each {bands[0] ? compactMoney(bands[0].upper, base) : ""} pay band
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <PayBandsChart
+                  data={bands.map((b) => ({
+                    lower: Number(b.lower),
+                    upper: Number(b.upper),
+                    headcount: b.headcount,
+                  }))}
+                />
+              </CardContent>
+            </Card>
+          </section>
+
+          <Card className="pb-0">
+            <CardHeader>
+              <CardTitle>Breakdown by {groupName}</CardTitle>
+              <CardDescription>
+                {groups.length} groups. Mean and median both shown, because the gap between them is
+                where the outliers are.
+              </CardDescription>
+            </CardHeader>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-4 capitalize">{groupName}</TableHead>
+                  <TableHead className="text-right">People</TableHead>
+                  <TableHead className="text-right">Total spend</TableHead>
+                  <TableHead className="w-40">Share of spend</TableHead>
+                  <TableHead className="text-right">Median</TableHead>
+                  <TableHead className="text-right">Average</TableHead>
+                  <TableHead className="pr-4 text-right">Range</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {groups.map((group) => {
+                  const share = percent(group.total_payroll, overall.total_payroll);
+                  return (
+                    <TableRow key={group.key}>
+                      <TableCell className="pl-4 font-medium">{group.label}</TableCell>
+                      <TableCell className="text-right tabular-nums">{count(group.headcount)}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {money(group.total_payroll, base)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                            <div
+                              className="h-full rounded-full bg-chart-1"
+                              style={{ width: `${biggest ? (Number(group.total_payroll) / biggest) * 100 : 0}%` }}
+                            />
+                          </div>
+                          <span className="w-10 text-right text-xs text-muted-foreground tabular-nums">
+                            {share.toFixed(1)}%
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {money(group.median_salary, base)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {money(group.average_salary, base)}
+                      </TableCell>
+                      <TableCell className="pr-4 text-right text-muted-foreground tabular-nums">
+                        {compactMoney(group.lowest_salary, base)} to{" "}
+                        {compactMoney(group.highest_salary, base)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </Card>
+
+          <Card className="pb-0">
+            <CardHeader>
+              <CardTitle>Paid well under their peers</CardTitle>
+              <CardDescription>
+                {count(peers.total)} people earn under {peers.threshold_percent}% of the median for
+                the same role in the same country. Roles with fewer than {peers.min_peers} people in a
+                country are left out.
+              </CardDescription>
+              <CardAction>
+                <Link
+                  href={`/pay-review${withParams(params, { group_by: "" })}`}
+                  className={buttonVariants({ variant: "outline", size: "sm" })}
+                >
+                  See all
+                  <ArrowRightIcon />
+                </Link>
+              </CardAction>
+            </CardHeader>
+            {peers.items.length ? (
+              <PeerGapTable items={peers.items} />
+            ) : (
+              <CardContent className="pb-4 text-muted-foreground">
+                Nobody in this selection is that far below their peers.
+              </CardContent>
+            )}
+          </Card>
         </div>
-        {groups.length === 0 ? (
-          <p className="empty">No one matches these filters.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>{summary.group_by}</th>
-                <th className="num">Headcount</th>
-                <th className="num">Total spend</th>
-                <th>Share</th>
-                <th className="num">Average</th>
-                <th className="num">Median</th>
-              </tr>
-            </thead>
-            <tbody>
-              {groups.map((group) => (
-                <tr key={group.key}>
-                  <td className="name">{group.label}</td>
-                  <td className="num">{count(group.headcount)}</td>
-                  <td className="num">{money(group.total_payroll, base)}</td>
-                  <td>
-                    <div
-                      className="bar"
-                      title={`${percent(group.total_payroll, overall.total_payroll).toFixed(1)}% of total spend`}
-                    >
-                      <span style={{ width: `${percent(group.total_payroll, biggest)}%` }} />
-                    </div>
-                  </td>
-                  <td className="num">{money(group.average_salary, base)}</td>
-                  <td className="num">{money(group.median_salary, base)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      <p className="footnote">
-        Both the average and the median are shown because they disagree, and the gap is the
-        interesting part. Every figure here is computed by the database over the filtered set, not
-        by adding up a page of results.
-      </p>
+      )}
     </>
   );
 }
