@@ -8,8 +8,21 @@ covered by fast unit tests instead of HTTP tests.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 from app.domain.pagination import DEFAULT_PAGE_SIZE
+
+
+@dataclass(frozen=True)
+class EmployeeInput:
+    full_name: str | None = None
+    email: str | None = None
+    country_code: str | None = None
+    department: str | None = None
+    role: str | None = None
+    hire_date: str | None = None
+    salary_amount: str | int | float | Decimal | None = None
+    salary_note: str | None = None
 
 
 @dataclass(frozen=True)
