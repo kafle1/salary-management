@@ -9,7 +9,7 @@ conversion and every aggregate happen in the database.
 
 - **Live app:** <https://acme-salaries.vercel.app>
 - **API docs:** <https://acme-salaries-api.vercel.app/docs>
-- **Demo video:** _link to add_
+- **Demo video:** <https://drive.google.com/file/d/1TWSR6B9sTyCRcx6od4TjbbqNenVyDAiG/view>
 
 The live site runs on free tiers. If it has been idle, the first page can take a few seconds to
 wake up.
