@@ -76,6 +76,12 @@ export function FilterBar({ params, options, groupBy }: Props) {
           // uncontrolled and keyed on the url, so Clear actually empties the box
           key={search}
           defaultValue={search}
+          // the selects add hidden text inputs, and a form with several of those ignores Enter
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }}
           placeholder="Name or email, then Enter"
           className="bg-background pl-8"
         />
